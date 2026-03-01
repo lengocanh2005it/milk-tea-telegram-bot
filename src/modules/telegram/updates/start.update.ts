@@ -21,22 +21,28 @@ export class StartUpdate {
     // ===== TRƯỜNG HỢP: MẸ (ADMIN) =====
     if (chatId !== adminId) {
       await ctx.reply(
-        '👋 Chào mẹ!\n\n' +
-          'Bot đã sẵn sàng nhận đơn.\n' +
-          'Khi có khách đặt đồ, đơn hàng sẽ được gửi về đây 📢',
+        '👋 *Chào mẹ!*\n\n' +
+          '🤖 *Bot đã sẵn sàng nhận đơn.*\n' +
+          '📢 Khi có khách đặt đồ, *đơn hàng sẽ được gửi về đây*.',
+        {
+          parse_mode: 'Markdown',
+        },
       );
       return;
     }
 
     // ===== TRƯỜNG HỢP: KHÁCH HÀNG =====
     await ctx.reply(
-      '👋 Chào bạn!\n\n' +
+      '👋 *Chào bạn!*\n\n' +
         'Mình là bot hỗ trợ đặt đồ uống 🧋\n' +
-        'của cửa hàng Trà Sữa Ngọc Anh.\n\n' +
-        'Vui lòng bấm nút bên dưới để bắt đầu đặt món 👇',
-      Markup.inlineKeyboard([
-        [Markup.button.callback('🧋 Đặt đồ uống', 'ORDER_START')],
-      ]),
+        'của cửa hàng *Trà Sữa Ngọc Anh*.\n\n' +
+        '👉 Vui lòng bấm nút bên dưới để *bắt đầu đặt món* 👇',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🧋 Đặt đồ uống', 'ORDER_START')],
+        ]),
+      },
     );
   }
 }

@@ -1,21 +1,23 @@
-import { DrinkSize } from '@/common/enums';
+import { DrinkSize, OrderStatus } from '@/common/enums';
 import type { TelegramContext } from '@/common/types';
 import { OrderSession } from '@/common/types';
 import {
+  confirmedKeyboard,
   ensureOrderSession,
   formatMoneyVND,
   isSameToppings,
 } from '@/common/utils';
 import { MenuService } from '@/modules/menu/menu.service';
 import { OrderService } from '@/modules/order/order.service';
-import { Action, Ctx, On, Update } from 'nestjs-telegraf';
-import { Markup } from 'telegraf';
+import { Action, Ctx, InjectBot, On, Update } from 'nestjs-telegraf';
+import { Markup, Telegraf } from 'telegraf';
 
 @Update()
 export class OrderUpdate {
   constructor(
     private readonly menuService: MenuService,
     private readonly orderService: OrderService,
+    @InjectBot() private readonly bot: Telegraf,
   ) {}
 
   // ===============================
@@ -30,14 +32,19 @@ export class OrderUpdate {
     } as OrderSession;
 
     await ctx.answerCbQuery();
+
     await ctx.reply(
-      '🧋 MENU CỬA HÀNG\n\nVui lòng chọn loại đồ uống:',
-      Markup.inlineKeyboard([
-        [Markup.button.callback('🥤 Trà Sữa', 'CAT_Trà Sữa')],
-        [Markup.button.callback('🍹 Trà Trái Cây', 'CAT_Trà Trái Cây')],
-        [Markup.button.callback('☕ Cà Phê', 'CAT_Cà Phê')],
-        [Markup.button.callback('🧊 Đá Xay', 'CAT_Đá Xay')],
-      ]),
+      '🧋 *MENU CỬA HÀNG*\n\n' +
+        '👉 Vui lòng *chọn loại đồ uống* bạn muốn đặt:',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🥤 Trà Sữa', 'CAT_Trà Sữa')],
+          [Markup.button.callback('🍹 Trà Trái Cây', 'CAT_Trà Trái Cây')],
+          [Markup.button.callback('☕ Cà Phê', 'CAT_Cà Phê')],
+          [Markup.button.callback('🧊 Đá Xay', 'CAT_Đá Xay')],
+        ]),
+      },
     );
   }
 
@@ -363,13 +370,27 @@ export class OrderUpdate {
     ctx.session.order = undefined;
 
     await ctx.answerCbQuery();
+
     await ctx.reply(
-      '✅ Đơn hàng đã được gửi cho shop để làm rồi nè 🧋\n\n' +
-        '⏳ Bạn vui lòng đợi shop chuẩn bị xong nha.\n' +
-        '🚚 Khi làm xong, shop sẽ giao đến đúng địa chỉ bạn đã cung cấp và *gọi điện cho bạn ra nhận*.\n\n' +
-        'Cảm ơn bạn nhiều nè ❤️',
+      '✅ *Đơn hàng của bạn đã được tạo thành công!* 🧋\n\n' +
+        `🆔 *Mã đơn hàng:* \`#${orderDb.orderCode}\`\n\n` +
+        '⏳ Bạn vui lòng đợi shop chuẩn bị nha.\n' +
+        '🚚 Khi làm xong, shop sẽ giao đến đúng địa chỉ và *gọi điện cho bạn ra nhận*.\n\n' +
+        '👉 Bạn có thể xem chi tiết đơn hàng hoặc tiếp tục đặt thêm món 👇',
       {
         parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              `🔍 Xem chi tiết đơn hàng #${orderDb.orderCode}`,
+              `ORDER_DETAIL_${orderDb.id}`,
+            ),
+          ],
+          [
+            Markup.button.callback('📜 Xem các đơn đã đặt', 'MY_ORDERS'),
+            Markup.button.callback('🧋 Đặt thêm đơn mới', 'ORDER_START'),
+          ],
+        ]),
       },
     );
   }
@@ -379,5 +400,91 @@ export class OrderUpdate {
     ctx.session.order = undefined;
     await ctx.answerCbQuery();
     await ctx.reply('❌ Đã huỷ đơn hàng.');
+  }
+
+  @Action(/^ADMIN_CONFIRM_([0-9a-fA-F-]+)$/)
+  async onAdminConfirm(@Ctx() ctx: TelegramContext) {
+    await ctx.answerCbQuery();
+
+    const orderId = ctx.match![1];
+
+    const order = await this.orderService.updateStatus(
+      orderId,
+      OrderStatus.CONFIRMED,
+    );
+
+    if (!order) return;
+
+    await ctx.editMessageReplyMarkup(confirmedKeyboard(orderId));
+
+    const customerName =
+      [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') ||
+      'bạn';
+
+    // 🔔 notify khách
+    await this.bot.telegram.sendMessage(
+      order.customerTelegramId,
+      `👋 *Chào ${customerName}*,\n\n` +
+        `📦 *Đơn hàng* \`#${order.orderCode}\` của bạn ` +
+        `đã được shop *xác nhận* ✅\n\n` +
+        `⏳ Shop đang chuẩn bị cho bạn nha 🧋`,
+      { parse_mode: 'Markdown' },
+    );
+  }
+
+  @Action(/^ADMIN_CANCEL_([0-9a-fA-F-]+)$/)
+  async onAdminCancel(@Ctx() ctx: TelegramContext) {
+    await ctx.answerCbQuery();
+
+    const orderId = ctx.match![1];
+
+    const order = await this.orderService.updateStatus(
+      orderId,
+      OrderStatus.CANCELLED,
+    );
+    if (!order) return;
+
+    await ctx.editMessageReplyMarkup(undefined);
+
+    const customerName =
+      [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') ||
+      'bạn';
+
+    await this.bot.telegram.sendMessage(
+      order.customerTelegramId,
+      `👋 *Chào ${customerName}*,\n\n` +
+        `❌ *Đơn hàng* \`#${order.orderCode}\` của bạn ` +
+        `đã bị *huỷ*.\n\n` +
+        `📞 Vui lòng liên hệ shop nếu bạn cần hỗ trợ thêm.`,
+      { parse_mode: 'Markdown' },
+    );
+  }
+
+  @Action(/^ADMIN_DONE_([0-9a-fA-F-]+)$/)
+  async onAdminDone(@Ctx() ctx: TelegramContext) {
+    await ctx.answerCbQuery();
+
+    const orderId = ctx.match![1];
+
+    const order = await this.orderService.updateStatus(
+      orderId,
+      OrderStatus.DONE,
+    );
+    if (!order) return;
+
+    await ctx.editMessageReplyMarkup(undefined);
+
+    const customerName =
+      [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') ||
+      'bạn';
+
+    await this.bot.telegram.sendMessage(
+      order.customerTelegramId,
+      `👋 *Chào ${customerName}*,\n\n` +
+        `🚚 *Đơn hàng* \`#${order.orderCode}\` của bạn ` +
+        `đã được *giao thành công* 🎉\n\n` +
+        `🙏 Cảm ơn bạn đã ủng hộ *Trà Sữa Ngọc Anh* 🧋`,
+      { parse_mode: 'Markdown' },
+    );
   }
 }

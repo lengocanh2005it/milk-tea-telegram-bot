@@ -1,12 +1,12 @@
-import { format } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
-
-const VIETNAM_TZ = 'Asia/Ho_Chi_Minh';
+import { addHours, format, parse } from 'date-fns';
 
 export function formatDateTimeVN(
-  date: Date,
-  pattern = 'HH:mm dd/MM/yyyy',
+  dateString: string,
+  pattern = "'Lúc' HH:mm 'ngày' dd/MM/yyyy",
 ): string {
-  const zonedDate = toZonedTime(date, VIETNAM_TZ);
-  return format(zonedDate, pattern);
+  const parsedDate = parse(dateString, 'HH:mm:ss d/M/yyyy', new Date());
+
+  const plus7Hours = addHours(parsedDate, 7);
+
+  return format(plus7Hours, pattern);
 }

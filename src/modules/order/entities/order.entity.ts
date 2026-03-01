@@ -23,6 +23,9 @@ export class Order {
   @Column()
   phoneNumber: string;
 
+  @Column({ unique: true })
+  orderCode: string;
+
   @Column({
     type: 'enum',
     enum: OrderStatus,

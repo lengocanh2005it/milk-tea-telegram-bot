@@ -8,8 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
-import { Repository } from 'typeorm';
-import { formatDateTimeVN, formatMoneyVND } from '@/common/utils';
+import { Like, Repository } from 'typeorm';
+import {
+  formatDateTimeVN,
+  formatMoneyVND,
+  pendingKeyboard,
+} from '@/common/utils';
+import { format } from 'date-fns';
 
 @Injectable()
 export class OrderService {
@@ -74,6 +79,7 @@ export class OrderService {
       totalPrice: 0,
       items: [],
       phoneNumber: session.phoneNumber,
+      orderCode: await this.generateOrderCode(),
     });
 
     await this.orderRepo.save(order);
@@ -175,6 +181,7 @@ export class OrderService {
     const message =
       `📦 *ĐƠN HÀNG MỚI*\n` +
       `━━━━━━━━━━━━━━━\n\n` +
+      `🆔 *Mã đơn hàng:* \`#${fullOrder.orderCode}\`\n\n` +
       `👤 *THÔNG TIN KHÁCH HÀNG*\n\n` +
       `• *Tên:* ${fullOrder.customerName}\n` +
       `• *Số điện thoại liên lạc:* ${fullOrder.phoneNumber ?? 'Không có'}\n` +
@@ -187,8 +194,9 @@ export class OrderService {
         fullOrder.totalPrice,
       )}*\n\n` +
       `⏰ *Thời gian đặt hàng:* ${formatDateTimeVN(
-        new Date(),
-        "'Lúc' HH:mm 'ngày' dd/MM/yyyy",
+        fullOrder.createdAt.toLocaleString('vi-VN', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+        }),
       )}`;
 
     await this.bot.telegram.sendMessage(
@@ -196,7 +204,77 @@ export class OrderService {
       message,
       {
         parse_mode: 'Markdown',
+        reply_markup: pendingKeyboard(fullOrder.id),
       },
     );
+  }
+
+  async getOrdersByCustomer(telegramId: string, limit = 5): Promise<Order[]> {
+    return this.orderRepo.find({
+      where: {
+        customerTelegramId: telegramId,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+      take: limit,
+    });
+  }
+
+  async getLatestOrders(limit = 10): Promise<Order[]> {
+    return this.orderRepo.find({
+      order: {
+        createdAt: 'DESC',
+      },
+      take: limit,
+    });
+  }
+
+  async getOrderDetailByCustomer(
+    orderId: string,
+    telegramId: string,
+  ): Promise<Order | null> {
+    return this.orderRepo.findOne({
+      where: {
+        id: orderId,
+        customerTelegramId: telegramId,
+      },
+      relations: {
+        items: {
+          drink: true,
+          orderItemToppings: {
+            topping: true,
+          },
+        },
+      },
+    });
+  }
+
+  async generateOrderCode(): Promise<string> {
+    const date = format(new Date(), 'yyMMdd');
+
+    const lastOrder = await this.orderRepo.findOne({
+      where: {
+        orderCode: Like(`ORD-${date}-%`),
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    const lastSeq = lastOrder ? Number(lastOrder.orderCode.split('-')[2]) : 0;
+
+    const nextSeq = String(lastSeq + 1).padStart(4, '0');
+
+    return `ORD-${date}-${nextSeq}`;
+  }
+
+  async updateStatus(orderId: string, status: OrderStatus) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    if (!order) return null;
+
+    order.status = status;
+    await this.orderRepo.save(order);
+    return order;
   }
 }

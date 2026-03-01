@@ -26,3 +26,33 @@ export function isSameToppings(
     ),
   );
 }
+
+export function pendingKeyboard(orderId: string) {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: '✅ Xác nhận đơn',
+          callback_data: `ADMIN_CONFIRM_${orderId}`,
+        },
+        {
+          text: '❌ Huỷ đơn',
+          callback_data: `ADMIN_CANCEL_${orderId}`,
+        },
+      ],
+    ],
+  };
+}
+
+export function confirmedKeyboard(orderId: string) {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: '🚚 Đã giao xong',
+          callback_data: `ADMIN_DONE_${orderId}`,
+        },
+      ],
+    ],
+  };
+}
