@@ -19,7 +19,7 @@ export class StartUpdate {
     const adminId = this.configService.get<string>('telegram.admin_id', '');
 
     // ===== TRƯỜNG HỢP: MẸ (ADMIN) =====
-    if (chatId !== adminId) {
+    if (chatId === adminId) {
       await ctx.reply(
         '👋 *Chào mẹ!*\n\n' +
           '🤖 *Bot đã sẵn sàng nhận đơn.*\n' +
